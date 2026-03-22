@@ -39,10 +39,7 @@ def transform_to_silver(df, species_name):
 
     # Rename columns to snake_case
     df = df.rename(columns={
-        "location_lat": "location_lat",
-        "location_long": "location_long",
         "individual_local_identifier": "individual_id",
-        "tag_id": "tag_id",
     })
 
     # Cast timestamp to datetime
