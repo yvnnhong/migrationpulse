@@ -37,10 +37,11 @@ def read_latest_bronze(species_name):
 def transform_to_silver(df, species_name):
     """Apply silver-layer cleaning and transformations."""
 
-    # Rename columns to snake_case
-    df = df.rename(columns={
-        "individual_local_identifier": "individual_id",
-    })
+    # Drop the numeric individual_id — keep the human-readable one
+    df = df.drop(columns=["individual_id"], errors="ignore")
+
+    # Rename individual_local_identifier to individual_id
+    df = df.rename(columns={"individual_local_identifier": "individual_id"})
 
     # Cast timestamp to datetime
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
