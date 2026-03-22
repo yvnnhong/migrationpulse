@@ -1,11 +1,8 @@
 from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
-from airflow.operators.email import EmailOperator
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.http.sensors.http import HttpSensor
-from airflow.providers.http.operators.http import HttpHook
 from datetime import datetime, timedelta
-
 default_args = {
     'owner': 'migrationpulse',
     'retries': 2,
