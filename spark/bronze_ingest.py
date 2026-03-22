@@ -16,11 +16,9 @@ BRONZE_BUCKET = "migrationpulse-bronze"
 # Movebank study IDs for our 5 species
 # These are real public study IDs from Movebank
 SPECIES_STUDIES = {
-    "osprey": 10449318,
-    "swainsons_hawk": 1895495,
-    "monarch_butterfly": 2531963,
-    "gray_whale": 2931918,
-    "caribou": 2631581,
+    "usgs_avian_telemetry": 619097045,
+    "ferruginous_hawk": 110270319,
+    "northern_elephant_seal": 7006760,
 }
 
 def fetch_species_data(species_name, study_id):
