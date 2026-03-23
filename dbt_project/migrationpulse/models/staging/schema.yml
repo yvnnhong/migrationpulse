@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: stg_movebank_sightings
+    description: "Cleaned and renamed silver layer GPS sightings from Movebank"
+    columns:
+      - name: individual_id
+        description: "Unique identifier for each eagle"
+        data_tests:
+          - not_null
+      - name: timestamp
+        description: "UTC timestamp of GPS fix"
+        data_tests:
+          - not_null
+      - name: latitude
+        description: "Latitude coordinate"
+        data_tests:
+          - not_null
+      - name: longitude
+        description: "Longitude coordinate"
+        data_tests:
+          - not_null
+      - name: species
+        description: "Species name"
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['bald_eagle']
