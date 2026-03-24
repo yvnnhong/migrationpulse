@@ -153,20 +153,18 @@ st.markdown("""
 # ── Load Data ─────────────────────────────────────────────────────────────────
 @st.cache_data
 def load_silver_data():
-    s3 = boto3.client(
-        's3',
-        aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
-        aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
-        region_name='us-east-2'
+    from deltalake import DeltaTable
+    storage_options = {
+        "AWS_ACCESS_KEY_ID": os.environ.get('AWS_ACCESS_KEY_ID'),
+        "AWS_SECRET_ACCESS_KEY": os.environ.get('AWS_SECRET_ACCESS_KEY'),
+        "AWS_REGION": "us-east-2",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    dt = DeltaTable(
+        "s3://migrationpulse-silver/bald_eagle",
+        storage_options=storage_options
     )
-    objs = sorted([
-        o['Key'] for o in s3.list_objects_v2(
-            Bucket='migrationpulse-silver',
-            Prefix='bald_eagle/'
-        )['Contents']
-    ], reverse=True)
-    obj = s3.get_object(Bucket='migrationpulse-silver', Key=objs[0])
-    df = pd.read_parquet(io.BytesIO(obj['Body'].read()))
+    df = dt.to_pandas()
     df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
     return df
 

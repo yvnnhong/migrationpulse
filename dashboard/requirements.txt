@@ -4,3 +4,4 @@ plotly
 boto3
 pandas
 pyarrow
+deltalake
