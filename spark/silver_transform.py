@@ -68,30 +68,33 @@ def transform_to_silver(df, species_name):
     return df
 
 def upload_to_silver(species_name, df):
-    """Upload cleaned dataframe as Parquet to S3 silver bucket."""
-    s3 = boto3.client(
-        "s3",
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        region_name=AWS_REGION,
+    """Upload cleaned dataframe as Delta table to S3 silver bucket."""
+    from deltalake import DeltaTable
+    from deltalake.writer import write_deltalake
+    import pyarrow as pa
+
+    s3_path = f"s3://{SILVER_BUCKET}/{species_name}"
+
+    storage_options = {
+        "AWS_ACCESS_KEY_ID": AWS_ACCESS_KEY_ID,
+        "AWS_SECRET_ACCESS_KEY": AWS_SECRET_ACCESS_KEY,
+        "AWS_REGION": AWS_REGION,
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+
+    # Convert to PyArrow table
+    arrow_table = pa.Table.from_pandas(df)
+
+    # Write as Delta table — overwrites existing data atomically
+    write_deltalake(
+        s3_path,
+        arrow_table,
+        mode="overwrite",
+        storage_options=storage_options,
     )
 
-    now = datetime.now(timezone.utc)
-    key = f"{species_name}/{now.strftime('%Y/%m/%d')}/silver_{now.strftime('%H%M%S')}.parquet"
-
-    # Write parquet to buffer
-    buffer = io.BytesIO()
-    df.to_parquet(buffer, index=False)
-    buffer.seek(0)
-
-    s3.put_object(
-        Bucket=SILVER_BUCKET,
-        Key=key,
-        Body=buffer.getvalue(),
-        ContentType="application/octet-stream",
-    )
-    print(f"Uploaded silver parquet to s3://{SILVER_BUCKET}/{key}")
-    return key
+    print(f"Written Delta table to {s3_path}")
+    return s3_path
 
 def run_silver_transform(species_list=["bald_eagle"]):
     results = {}
@@ -110,4 +113,4 @@ if __name__ == "__main__":
     results = run_silver_transform()
     print("\n=== SILVER TRANSFORM SUMMARY ===")
     for species, result in results.items():
-        print(f"{species}: {result['status']} — {result.get('records', 0)} records")
+        print(f"{species}: {result['status']} — {result.get('records', 0)} records — {result.get('s3_key', '')}")
