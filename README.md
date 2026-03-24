@@ -1,7 +1,7 @@
 # MigrationPulse
 ### Animal Migration Analytics Pipeline
 
-`Airflow` · `PySpark` · `dbt` · `AWS S3` · `MLflow` · `Streamlit`
+`Airflow` · `PySpark` · `dbt` · `Delta Lake` · `AWS S3` · `MLflow` · `Streamlit`
 
 ---
 
@@ -15,10 +15,10 @@ A weekly-automated data engineering pipeline that ingests live GPS telemetry fro
 
 - Fetches Movebank GPS records weekly via Airflow DAG — currently tracking Bald Eagle (*Haliaeetus leucocephalus*) in the Pacific Northwest (study active as of 2026)
 - Stores raw JSON in AWS S3 bronze bucket and processes it through Bronze → Silver → Gold layers
-- Cleans and types raw telemetry with PySpark — deduplicates, casts timestamps, drops null coordinates, writes Silver layer as Parquet
-- Models Silver-to-Gold transformations with dbt — staging, fact, and reporting mart layers with built-in data quality tests
+- Cleans and types raw telemetry with pandas — deduplicates, casts timestamps, drops null coordinates, writes Silver layer as a Delta Lake table on S3
+- Models Silver-to-Gold transformations with dbt — staging, fact, and reporting mart layers with built-in data quality tests; dbt reads from the Delta table via `delta_scan()`
 - Detects migration corridor deviations per species using DTW (Dynamic Time Warping); all experiment runs logged with MLflow
-- Visualizes migration paths, corridor deviations, and anomalies on a live Streamlit dashboard with pydeck maps
+- Visualizes migration paths, corridor deviations, and anomalies on a live Streamlit dashboard with pydeck maps; dashboard reads directly from the Delta Lake Silver table
 
 ---
 
@@ -29,7 +29,8 @@ A weekly-automated data engineering pipeline that ingests live GPS telemetry fro
 | Orchestration | Apache Airflow 2.x |
 | Compute | PySpark + pandas |
 | Storage | AWS S3 (Bronze/Silver/Gold buckets) |
-| Data Modeling | dbt Core |
+| Table Format | Delta Lake (Silver layer) |
+| Data Modeling | dbt Core + dbt-duckdb |
 | ML Tracking | MLflow |
 | Cloud | AWS |
 | Dashboard | Streamlit + pydeck + Plotly |
@@ -45,10 +46,10 @@ A weekly-automated data engineering pipeline that ingests live GPS telemetry fro
 |---|---|---|
 | Airflow DAG | Live | All 8 tasks running end-to-end |
 | Bronze ingest | Working | 45,327 bald eagle GPS records in S3 |
-| Silver transform | Working | 45,283 cleaned records as Parquet in S3 |
-| dbt models | Working | 3 models, 6 tests, all passing |
+| Silver transform | Working | 45,295 cleaned records as Delta Lake table in S3 |
+| dbt models | Working | 3 models, 6 tests, all passing; reads from Delta table |
 | DTW + MLflow | Working | Scoring 5 individuals, experiment tracked |
-| Streamlit dashboard | Live | migrationpulse.streamlit.app |
+| Streamlit dashboard | Live | migrationpulse.streamlit.app; reads from Delta Lake |
 
 ---
 
@@ -60,7 +61,7 @@ migrationpulse/
 │   └── migration_pipeline.py      # Main Airflow DAG (8 tasks, @weekly)
 ├── spark/
 │   ├── bronze_ingest.py           # Movebank API → raw JSON → S3 bronze
-│   └── silver_transform.py        # S3 bronze → cleaned Parquet → S3 silver
+│   └── silver_transform.py        # S3 bronze → Delta Lake table → S3 silver
 ├── dbt_project/
 │   └── migrationpulse/
 │       └── models/
@@ -90,7 +91,7 @@ migrationpulse/
 - Docker Desktop (for local Airflow)
 - AWS account with S3 access
 - Movebank account (free at movebank.org)
-- `pip install requests boto3 pandas pyarrow dbt-core dbt-duckdb mlflow dtaidistance matplotlib streamlit pydeck plotly`
+- `pip install requests boto3 pandas pyarrow deltalake dbt-core dbt-duckdb mlflow dtaidistance matplotlib streamlit pydeck plotly`
 
 ### 1. Clone and configure
 
@@ -161,24 +162,29 @@ The main DAG (`migration_pipeline`) runs on a `@weekly` schedule. Tasks execute 
 | `check_api_health` | PythonOperator | Confirms Movebank API is reachable before fetching |
 | `fetch_movebank_data` | PythonOperator | Pulls new GPS records for all tracked species |
 | `upload_to_s3` | PythonOperator | Confirms raw JSON is written to S3 bronze bucket |
-| `run_pyspark_transform` | PythonOperator | Applies Silver-layer cleaning and typing |
-| `run_dbt_models` | BashOperator | Runs dbt models (staging → marts) |
+| `run_pyspark_transform` | PythonOperator | Applies Silver-layer cleaning and writes Delta table |
+| `run_dbt_models` | BashOperator | Runs dbt models (staging → marts) against Delta table |
 | `run_dbt_tests` | BashOperator | Runs dbt build with tests; fails DAG on data quality issues |
 | `score_anomalies` | PythonOperator | DTW corridor deviation scoring; results logged to MLflow |
 | `notify_on_anomalies` | PythonOperator | Prints alert if anomaly rate exceeds 5% threshold |
 
 ---
 
-## Data Source
+## Delta Lake
 
-**Bald Eagle (Haliaeetus leucocephalus) in the Pacific Northwest**
-- Study ID: `430263960`
-- PI: Myles Lamont / Bald Eagle Tracking Alliance
-- License: CC0 (public domain)
-- Coverage: 2018 – present (actively updated)
-- Records: 120,522+ GPS fixes across 40 individuals
+The Silver layer writes data as a Delta Lake table (`s3://migrationpulse-silver/bald_eagle`) instead of individual Parquet files. This means:
 
-All animal tracking data sourced from [Movebank](https://movebank.org), hosted by the Max Planck Institute of Animal Behavior.
+- **Atomic commits** — if a weekly pipeline run crashes mid-write, the partial write is rolled back automatically. The dashboard and dbt always read the last successfully committed version.
+- **Transaction log** — every write is recorded in `_delta_log/` alongside the Parquet data files. The table format is Delta Lake over Parquet; DuckDB reads it via the `delta_scan()` function.
+- **Schema enforcement** — mismatched columns from new species APIs are rejected at write time rather than silently corrupting downstream models.
+
+```python
+# silver_transform.py — write
+write_deltalake(s3_path, arrow_table, mode="overwrite", storage_options=storage_options)
+
+# stg_movebank_sightings.sql — read
+from delta_scan('s3://migrationpulse-silver/bald_eagle')
+```
 
 ---
 
@@ -186,10 +192,13 @@ All animal tracking data sourced from [Movebank](https://movebank.org), hosted b
 
 ```
 migrationpulse-bronze/
-└── bald_eagle/2026/03/22/raw_213007.json
+└── bald_eagle/2026/03/24/raw_014214.json
 
 migrationpulse-silver/
-└── bald_eagle/2026/03/22/silver_222624.parquet
+└── bald_eagle/
+    ├── _delta_log/               # Delta Lake transaction log
+    │   └── 00000000000000000000.json
+    └── part-00000-*.parquet      # Data files managed by Delta
 
 migrationpulse-gold/
 └── (dbt mart outputs)
@@ -201,7 +210,7 @@ migrationpulse-gold/
 
 | Model | Layer | Description |
 |---|---|---|
-| `stg_movebank_sightings` | Staging | Reads S3 silver Parquet, renames columns, filters null coordinates |
+| `stg_movebank_sightings` | Staging | Reads Delta table via delta_scan(), renames columns, filters null coordinates |
 | `fct_species_movements` | Mart | One row per GPS fix; adds displacement and speed_deg_per_hour |
 | `rpt_corridor_deviation` | Mart | Weekly aggregate per individual: avg position, speed, bounding box |
 
