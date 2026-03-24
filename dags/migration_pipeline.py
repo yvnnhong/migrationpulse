@@ -30,16 +30,34 @@ def check_api_health_fn():
     print(f"Movebank API healthy — status {resp.status_code}")
 
 def fetch_movebank_data_fn():
-    from spark.bronze_ingest import run_bronze_ingest
-    run_bronze_ingest()
+    import subprocess
+    result = subprocess.run(
+        ['python', '/opt/airflow/spark/bronze_ingest.py'],
+        capture_output=True, text=True
+    )
+    print(result.stdout)
+    if result.returncode != 0:
+        raise Exception(f"Bronze ingest failed: {result.stderr}")
 
 def run_silver_transform_fn():
-    from spark.silver_transform import run_silver_transform
-    run_silver_transform()
+    import subprocess
+    result = subprocess.run(
+        ['python', '/opt/airflow/spark/silver_transform.py'],
+        capture_output=True, text=True
+    )
+    print(result.stdout)
+    if result.returncode != 0:
+        raise Exception(f"Silver transform failed: {result.stderr}")
 
 def score_anomalies_fn():
-    from ml.dtw_corridor_scorer import run_dtw_scoring
-    run_dtw_scoring()
+    import subprocess
+    result = subprocess.run(
+        ['python', '/opt/airflow/ml/dtw_corridor_scorer.py'],
+        capture_output=True, text=True
+    )
+    print(result.stdout)
+    if result.returncode != 0:
+        raise Exception(f"DTW scoring failed: {result.stderr}")
 
 def notify_on_anomalies_fn():
     import mlflow
