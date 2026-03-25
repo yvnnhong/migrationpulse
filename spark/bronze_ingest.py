@@ -17,7 +17,16 @@ SPECIES_STUDIES = {
     "bald_eagle": {
         "study_id": 430263960,
         "individuals": ["BACA01", "BACA02", "BACA03", "BAEA24-69", "BAEA24-70"],
-    }
+    },
+    "turkey_vulture": {
+        "study_id": 16880941,
+        "individuals": [
+            "Argentina", "Butterball", "Disney", "Domingo", "Irma",
+            "La Pampa", "Leo", "Mac", "Mark", "Mary", "Morongo",
+            "Prado", "Rosalie", "Sarkis", "Schaumboch", "Steamhouse 1",
+            "Steamhouse 2", "Whitey", "Young Luro"
+        ],
+    },
 }
 
 def fetch_individual(study_id, individual_id):

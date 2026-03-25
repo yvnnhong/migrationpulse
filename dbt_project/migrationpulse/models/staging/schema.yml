@@ -5,7 +5,7 @@ models:
     description: "Cleaned and renamed silver layer GPS sightings from Movebank"
     columns:
       - name: individual_id
-        description: "Unique identifier for each eagle"
+        description: "Unique identifier for each tagged individual"
         data_tests:
           - not_null
       - name: timestamp
@@ -25,4 +25,4 @@ models:
         data_tests:
           - not_null
           - accepted_values:
-              values: ['bald_eagle']
+              values: ['bald_eagle', 'turkey_vulture']

@@ -10,9 +10,20 @@
     )
 ") }}
 
-with source as (
+with bald_eagle as (
     select *
     from delta_scan('s3://migrationpulse-silver/bald_eagle')
+),
+
+turkey_vulture as (
+    select *
+    from delta_scan('s3://migrationpulse-silver/turkey_vulture')
+),
+
+source as (
+    select * from bald_eagle
+    union all
+    select * from turkey_vulture
 ),
 
 renamed as (

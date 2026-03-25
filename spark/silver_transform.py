@@ -96,7 +96,7 @@ def upload_to_silver(species_name, df):
     print(f"Written Delta table to {s3_path}")
     return s3_path
 
-def run_silver_transform(species_list=["bald_eagle"]):
+def run_silver_transform(species_list=["bald_eagle", "turkey_vulture"]):
     results = {}
     for species_name in species_list:
         try:
