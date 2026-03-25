@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r dashboard/requirements.txt
 
       - name: Write dbt profiles.yml
         run: |
