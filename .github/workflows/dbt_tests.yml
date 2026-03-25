@@ -28,6 +28,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r dashboard/requirements.txt
+          pip install dbt-core dbt-duckdb
 
       - name: Write dbt profiles.yml
         run: |
