@@ -29,6 +29,14 @@ SPECIES_STUDIES = {
     },
 }
 
+# Species ingested from local CSV (API access not available)
+CSV_SPECIES = {
+    "delmarva_waterfowl": {
+        "csv_path": r"C:\Users\yvonn\Downloads\Delmarva Wintering Waterfowl AIV and Poultry.csv",
+        "species_col": "individual-taxon-canonical-name",  # we'll detect this from the file
+    },
+}
+
 def fetch_individual(study_id, individual_id):
     """Fetch GPS records for one individual from Movebank API."""
     resp = requests.get(
@@ -66,8 +74,36 @@ def upload_to_bronze(species_name, df):
     print(f"Uploaded {len(df)} records to s3://{BRONZE_BUCKET}/{key}")
     return key
 
+def ingest_from_csv(species_name, csv_path):
+    """Read a Movebank CSV download and upload to S3 bronze."""
+    print(f"Reading CSV for {species_name} from {csv_path}...")
+    df = pd.read_csv(csv_path, low_memory=False)
+    print(f"  Raw CSV shape: {df.shape}")
+    print(f"  Columns: {df.columns.tolist()}")
+
+    # Standardize column names to match API-ingested species
+    col_map = {}
+    if "location-lat" in df.columns:
+        col_map["location-lat"] = "location_lat"
+    if "location-long" in df.columns:
+        col_map["location-long"] = "location_long"
+    if "individual-local-identifier" in df.columns:
+        col_map["individual-local-identifier"] = "individual_local_identifier"
+    if "individual-taxon-canonical-name" in df.columns:
+        col_map["individual-taxon-canonical-name"] = "taxon"
+    df = df.rename(columns=col_map)
+
+    # Keep only GPS rows with valid coordinates
+    df = df.dropna(subset=["location_lat", "location_long"])
+
+    print(f"  Records after filtering: {len(df)}")
+    key = upload_to_bronze(species_name, df)
+    return key
+
 def run_bronze_ingest():
     results = {}
+
+    # API-based ingestion
     for species_name, config in SPECIES_STUDIES.items():
         try:
             all_dfs = []
@@ -81,6 +117,16 @@ def run_bronze_ingest():
         except Exception as e:
             print(f"ERROR processing {species_name}: {e}")
             results[species_name] = {"status": "failed", "error": str(e)}
+
+    # CSV-based ingestion
+    for species_name, config in CSV_SPECIES.items():
+        try:
+            key = ingest_from_csv(species_name, config["csv_path"])
+            results[species_name] = {"status": "success", "s3_key": key}
+        except Exception as e:
+            print(f"ERROR processing {species_name} from CSV: {e}")
+            results[species_name] = {"status": "failed", "error": str(e)}
+
     return results
 
 if __name__ == "__main__":
