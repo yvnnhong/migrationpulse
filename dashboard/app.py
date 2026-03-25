@@ -146,7 +146,7 @@ hr {
 st.markdown("""
 <div class="title-wrap">
     <div class="main-title">Migration<span class="pink">Pulse</span></div>
-    <div class="subtitle-line">// Live Bald Eagle Migration Analytics — Pacific Northwest</div>
+    <div class="subtitle-line">// Live Migration Analytics — Bald Eagle · Turkey Vulture</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -160,11 +160,14 @@ def load_silver_data():
         "AWS_REGION": "us-east-2",
         "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
     }
-    dt = DeltaTable(
-        "s3://migrationpulse-silver/bald_eagle",
-        storage_options=storage_options
-    )
-    df = dt.to_pandas()
+    dfs = []
+    for species in ["bald_eagle", "turkey_vulture"]:
+        dt = DeltaTable(
+            f"s3://migrationpulse-silver/{species}",
+            storage_options=storage_options
+        )
+        dfs.append(dt.to_pandas())
+    df = pd.concat(dfs, ignore_index=True)
     df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
     return df
 
@@ -215,9 +218,9 @@ for i, ind in enumerate(selected):
     ))
 
 view = pdk.ViewState(
-    latitude=filtered['location_lat'].mean(),
-    longitude=filtered['location_long'].mean(),
-    zoom=5, pitch=0,
+    latitude=38.5,
+    longitude=-97.0,
+    zoom=3, pitch=0,
 )
 
 st.pydeck_chart(pdk.Deck(
