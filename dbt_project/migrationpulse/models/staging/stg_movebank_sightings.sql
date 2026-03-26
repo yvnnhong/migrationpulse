@@ -11,21 +11,24 @@
 ") }}
 
 with bald_eagle as (
-    select *
+    select individual_id, timestamp, location_lat, location_long, species, ingest_date
     from delta_scan('s3://migrationpulse-silver/bald_eagle')
 ),
-
 turkey_vulture as (
-    select *
+    select individual_id, timestamp, location_lat, location_long, species, ingest_date
     from delta_scan('s3://migrationpulse-silver/turkey_vulture')
 ),
-
+delmarva_waterfowl as (
+    select individual_id, timestamp, location_lat, location_long, species, ingest_date
+    from delta_scan('s3://migrationpulse-silver/delmarva_waterfowl')
+),
 source as (
     select * from bald_eagle
     union all
     select * from turkey_vulture
+    union all
+    select * from delmarva_waterfowl
 ),
-
 renamed as (
     select
         individual_id,

@@ -25,4 +25,4 @@ models:
         data_tests:
           - not_null
           - accepted_values:
-              values: ['bald_eagle', 'turkey_vulture']
+              values: ['bald_eagle', 'turkey_vulture', 'delmarva_waterfowl']

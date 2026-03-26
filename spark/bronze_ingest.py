@@ -49,6 +49,9 @@ def fetch_individual(study_id, individual_id):
         auth=(MOVEBANK_USERNAME, MOVEBANK_PASSWORD),
         timeout=60,
     )
+    if resp.status_code == 500:
+        print(f"  WARNING: 500 error for {individual_id}, skipping...")
+        return pd.DataFrame()
     resp.raise_for_status()
     df = pd.read_csv(io.StringIO(resp.text))
     df["individual_local_identifier"] = individual_id
@@ -75,30 +78,49 @@ def upload_to_bronze(species_name, df):
     return key
 
 def ingest_from_csv(species_name, csv_path):
-    """Read a Movebank CSV download and upload to S3 bronze."""
+    """Read a Movebank CSV download and upload to S3 bronze in chunks."""
     print(f"Reading CSV for {species_name} from {csv_path}...")
-    df = pd.read_csv(csv_path, low_memory=False)
-    print(f"  Raw CSV shape: {df.shape}")
-    print(f"  Columns: {df.columns.tolist()}")
+    
+    chunk_size = 500_000
+    chunk_num = 0
+    total_records = 0
 
-    # Standardize column names to match API-ingested species
-    col_map = {}
-    if "location-lat" in df.columns:
-        col_map["location-lat"] = "location_lat"
-    if "location-long" in df.columns:
-        col_map["location-long"] = "location_long"
-    if "individual-local-identifier" in df.columns:
-        col_map["individual-local-identifier"] = "individual_local_identifier"
-    if "individual-taxon-canonical-name" in df.columns:
-        col_map["individual-taxon-canonical-name"] = "taxon"
-    df = df.rename(columns=col_map)
+    for chunk in pd.read_csv(csv_path, low_memory=False, chunksize=chunk_size):
+        col_map = {}
+        if "location-lat" in chunk.columns:
+            col_map["location-lat"] = "location_lat"
+        if "location-long" in chunk.columns:
+            col_map["location-long"] = "location_long"
+        if "individual-local-identifier" in chunk.columns:
+            col_map["individual-local-identifier"] = "individual_local_identifier"
+        if "individual-taxon-canonical-name" in chunk.columns:
+            col_map["individual-taxon-canonical-name"] = "taxon"
+        chunk = chunk.rename(columns=col_map)
+        chunk = chunk.dropna(subset=["location_lat", "location_long"])
 
-    # Keep only GPS rows with valid coordinates
-    df = df.dropna(subset=["location_lat", "location_long"])
+        if len(chunk) == 0:
+            continue
 
-    print(f"  Records after filtering: {len(df)}")
-    key = upload_to_bronze(species_name, df)
-    return key
+        s3 = boto3.client(
+            "s3",
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=AWS_REGION,
+        )
+        now = datetime.now(timezone.utc)
+        key = f"{species_name}/{now.strftime('%Y/%m/%d')}/raw_{now.strftime('%H%M%S')}_{chunk_num}.json"
+        s3.put_object(
+            Bucket=BRONZE_BUCKET,
+            Key=key,
+            Body=chunk.to_json(orient="records"),
+            ContentType="application/json",
+        )
+        print(f"  Uploaded chunk {chunk_num}: {len(chunk)} records → s3://{BRONZE_BUCKET}/{key}")
+        total_records += len(chunk)
+        chunk_num += 1
+
+    print(f"  Total uploaded: {total_records} records in {chunk_num} chunks")
+    return f"{species_name}/{now.strftime('%Y/%m/%d')}/"
 
 def run_bronze_ingest():
     results = {}
@@ -110,7 +132,10 @@ def run_bronze_ingest():
             for individual in config["individuals"]:
                 print(f"Fetching {species_name} / {individual}...")
                 df = fetch_individual(config["study_id"], individual)
-                all_dfs.append(df)
+                if len(df) > 0:
+                    all_dfs.append(df)
+            if not all_dfs:
+                raise ValueError("No data fetched for any individual")
             combined = pd.concat(all_dfs, ignore_index=True)
             key = upload_to_bronze(species_name, combined)
             results[species_name] = {"status": "success", "s3_key": key, "records": len(combined)}

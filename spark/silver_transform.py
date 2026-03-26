@@ -13,7 +13,7 @@ BRONZE_BUCKET = "migrationpulse-bronze"
 SILVER_BUCKET = "migrationpulse-silver"
 
 def read_latest_bronze(species_name):
-    """Read the most recent bronze JSON file for a species from S3."""
+    """Read bronze JSON files for a species from S3."""
     s3 = boto3.client(
         "s3",
         aws_access_key_id=AWS_ACCESS_KEY_ID,
@@ -21,18 +21,23 @@ def read_latest_bronze(species_name):
         region_name=AWS_REGION,
     )
 
-    # List all files for this species and get the most recent
     response = s3.list_objects_v2(Bucket=BRONZE_BUCKET, Prefix=f"{species_name}/")
     files = sorted([obj["Key"] for obj in response.get("Contents", [])], reverse=True)
 
     if not files:
         raise ValueError(f"No bronze files found for {species_name}")
 
-    latest = files[0]
-    print(f"Reading bronze file: {latest}")
-    obj = s3.get_object(Bucket=BRONZE_BUCKET, Key=latest)
-    df = pd.read_json(io.BytesIO(obj["Body"].read()))
-    return df
+    # Get all files from the most recent date folder
+    latest_date = "/".join(files[0].split("/")[:4])  # e.g. delmarva_waterfowl/2026/03/25
+    date_files = [f for f in files if f.startswith(latest_date)]
+
+    print(f"Reading {len(date_files)} bronze file(s) for {species_name}...")
+    dfs = []
+    for file in date_files:
+        obj = s3.get_object(Bucket=BRONZE_BUCKET, Key=file)
+        dfs.append(pd.read_json(io.BytesIO(obj["Body"].read())))
+
+    return pd.concat(dfs, ignore_index=True)
 
 def transform_to_silver(df, species_name):
     """Apply silver-layer cleaning and transformations."""
@@ -69,7 +74,6 @@ def transform_to_silver(df, species_name):
 
 def upload_to_silver(species_name, df):
     """Upload cleaned dataframe as Delta table to S3 silver bucket."""
-    from deltalake import DeltaTable
     from deltalake.writer import write_deltalake
     import pyarrow as pa
 
@@ -82,21 +86,26 @@ def upload_to_silver(species_name, df):
         "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
     }
 
-    # Convert to PyArrow table
-    arrow_table = pa.Table.from_pandas(df)
+    chunk_size = 1_000_000
+    first_chunk = True
 
-    # Write as Delta table — overwrites existing data atomically
-    write_deltalake(
-        s3_path,
-        arrow_table,
-        mode="overwrite",
-        storage_options=storage_options,
-    )
+    for i in range(0, len(df), chunk_size):
+        chunk = df.iloc[i:i + chunk_size]
+        arrow_table = pa.Table.from_pandas(chunk)
+        mode = "overwrite" if first_chunk else "append"
+        write_deltalake(
+            s3_path,
+            arrow_table,
+            mode=mode,
+            storage_options=storage_options,
+        )
+        print(f"  Written chunk {i // chunk_size}: {len(chunk)} records")
+        first_chunk = False
 
     print(f"Written Delta table to {s3_path}")
     return s3_path
 
-def run_silver_transform(species_list=["bald_eagle", "turkey_vulture"]):
+def run_silver_transform(species_list=["bald_eagle", "turkey_vulture", "delmarva_waterfowl"]):
     results = {}
     for species_name in species_list:
         try:

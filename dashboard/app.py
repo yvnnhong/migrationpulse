@@ -146,7 +146,7 @@ hr {
 st.markdown("""
 <div class="title-wrap">
     <div class="main-title">Migration<span class="pink">Pulse</span></div>
-    <div class="subtitle-line">// Live Migration Analytics — Bald Eagle · Turkey Vulture</div>
+    <div class="subtitle-line">// Live Migration Analytics — Bald Eagle · Turkey Vulture · Snow Goose · Canada Goose · Mallard</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -161,7 +161,7 @@ def load_silver_data():
         "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
     }
     dfs = []
-    for species in ["bald_eagle", "turkey_vulture"]:
+    for species in ["bald_eagle", "turkey_vulture", "delmarva_waterfowl"]:
         dt = DeltaTable(
             f"s3://migrationpulse-silver/{species}",
             storage_options=storage_options
