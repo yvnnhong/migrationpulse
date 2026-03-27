@@ -166,7 +166,11 @@ def load_silver_data():
             f"s3://migrationpulse-silver/{species}",
             storage_options=storage_options
         )
-        dfs.append(dt.to_pandas())
+        df = dt.to_pandas(columns=["individual_id", "timestamp", "location_lat", "location_long", "species"])
+        # Sample large datasets to keep memory manageable on Streamlit Cloud
+        if len(df) > 500_000:
+            df = df.sample(n=500_000, random_state=42)
+        dfs.append(df)
     df = pd.concat(dfs, ignore_index=True)
     df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
     return df
