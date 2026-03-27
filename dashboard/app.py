@@ -32,13 +32,13 @@ html, body,
 
 /* ── Title block ── */
 .title-wrap {
-    padding: 2.8rem 0 2rem 0;
+    padding: 1rem 0 1.5rem 0;
     border-bottom: 1px solid rgba(255,255,255,0.1);
     margin-bottom: 2.5rem;
 }
 .main-title {
     font-family: 'Outfit', sans-serif !important;
-    font-size: 6rem !important;
+    font-size: 4rem !important;
     font-weight: 900 !important;
     line-height: 1.0 !important;
     margin: 0 !important;
@@ -151,7 +151,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Load Data ─────────────────────────────────────────────────────────────────
-@st.cache_data
+@st.cache_data(ttl=0)
 def load_silver_data():
     from deltalake import DeltaTable
     storage_options = {
@@ -162,20 +162,16 @@ def load_silver_data():
     }
     dfs = []
     for species in ["bald_eagle", "turkey_vulture", "delmarva_waterfowl"]:
-        dt = DeltaTable(
-            f"s3://migrationpulse-silver/{species}",
-            storage_options=storage_options
-        )
+        dt = DeltaTable(f"s3://migrationpulse-silver/{species}", storage_options=storage_options)
         df = dt.to_pandas(columns=["individual_id", "timestamp", "location_lat", "location_long", "species"])
-        # Sample large datasets to keep memory manageable on Streamlit Cloud
-        if len(df) > 500_000:
-            df = df.sample(n=500_000, random_state=42)
+        if len(df) > 200_000:
+            df = df.sample(n=200_000, random_state=42)
         dfs.append(df)
     df = pd.concat(dfs, ignore_index=True)
     df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
     return df
 
-with st.spinner("Loading eagle GPS data from S3..."):
+with st.spinner("Loading migration data from S3..."):
     df = load_silver_data()
 
 # ── Summary Cards ─────────────────────────────────────────────────────────────
@@ -183,13 +179,11 @@ st.markdown('<div class="sec-label">Weekly Summary</div>', unsafe_allow_html=Tru
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Total GPS Fixes", f"{len(df):,}")
 c2.metric("Individuals Tracked", df['individual_id'].nunique())
-c3.metric("Date Range", f"{df['timestamp'].min().date()} → {df['timestamp'].max().date()}")
+c3.metric("Date Range", f"{df['timestamp'].min().strftime('%Y-%m')} → {df['timestamp'].max().strftime('%Y-%m')}")
 c4.metric("Species", df['species'].nunique())
 
 st.divider()
 
-# ── Individual Selector ───────────────────────────────────────────────────────
-st.markdown('<div class="sec-label">Migration Map</div>', unsafe_allow_html=True)
 individuals = sorted(df['individual_id'].unique())
 selected = st.multiselect("Select individuals to display:", individuals, default=individuals[:3])
 filtered = df[df['individual_id'].isin(selected)].sort_values('timestamp')
@@ -236,55 +230,3 @@ st.pydeck_chart(pdk.Deck(
 
 st.divider()
 
-# ── Latitude Over Time ────────────────────────────────────────────────────────
-st.markdown('<div class="sec-label">Latitude Over Time — Migration Progress</div>', unsafe_allow_html=True)
-
-fig = go.Figure()
-for i, ind in enumerate(selected):
-    ind_df = filtered[filtered['individual_id'] == ind].sort_values('timestamp')
-    fig.add_trace(go.Scatter(
-        x=ind_df['timestamp'],
-        y=ind_df['location_lat'],
-        mode='lines',
-        name=ind,
-        line=dict(color=PLOTLY_COLORS[i % len(PLOTLY_COLORS)], width=2),
-    ))
-
-fig.update_layout(
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(255,255,255,0.04)',
-    font=dict(family='DM Mono, monospace', color='rgba(255,255,255,0.6)', size=11),
-    xaxis=dict(
-        gridcolor='rgba(255,255,255,0.07)',
-        linecolor='rgba(255,255,255,0.1)',
-        tickfont=dict(color='rgba(255,255,255,0.5)'),
-        showgrid=True,
-    ),
-    yaxis=dict(
-        gridcolor='rgba(255,255,255,0.07)',
-        linecolor='rgba(255,255,255,0.1)',
-        tickfont=dict(color='rgba(255,255,255,0.5)'),
-        title=dict(text='Latitude', font=dict(color='rgba(255,255,255,0.4)')),
-        showgrid=True,
-    ),
-    legend=dict(
-        bgcolor='rgba(255,255,255,0.05)',
-        bordercolor='rgba(255,255,255,0.1)',
-        borderwidth=1,
-        font=dict(color='#ffffff', size=11),
-    ),
-    margin=dict(l=50, r=20, t=20, b=40),
-    height=380,
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-st.divider()
-
-# ── Raw Data Explorer ─────────────────────────────────────────────────────────
-st.markdown('<div class="sec-label">Raw Data Explorer</div>', unsafe_allow_html=True)
-st.dataframe(
-    filtered[['individual_id', 'timestamp', 'location_lat', 'location_long', 'species']]
-    .sort_values('timestamp', ascending=False),
-    use_container_width=True,
-)
