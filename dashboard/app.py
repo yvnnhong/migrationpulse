@@ -151,7 +151,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Load Data ─────────────────────────────────────────────────────────────────
-@st.cache_data(ttl=0)
+@st.cache_data
 def load_silver_data():
     from deltalake import DeltaTable
     storage_options = {
